@@ -1,7 +1,7 @@
 # Tugas Besar ETS PCD
 ## Face Ethnicity Detection & Preprocessing Dataset
 
-Proyek ini merupakan bagian dari tugas praktikum Computer Vision yang bertujuan untuk melakukan preprocessing dataset wajah berdasarkan suku di Indonesia. Proses ini mencakup deteksi wajah otomatis menggunakan MTCNN, cropping wajah, dan menyimpan gambar ke dalam struktur folder tertentu sesuai label suku.
+Proyek ini merupakan bagian dari tugas praktikum Pengolahan Citra Digital yang bertujuan untuk melakukan preprocessing dataset wajah berdasarkan suku di Indonesia. Proses ini mencakup deteksi wajah otomatis menggunakan MTCNN, cropping wajah, dan menyimpan gambar ke dalam struktur folder tertentu sesuai label suku.
 
 ## Fitur Utama
 - Upload gambar/foto
