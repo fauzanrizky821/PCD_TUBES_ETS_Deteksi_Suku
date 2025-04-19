@@ -9,6 +9,7 @@ from keras.saving import register_keras_serializable
 from preprocessing.preprocess import detect_face_mtcnn, detect_face_mtcnn_suku
 from model.predict_siamese import predict_suku_siamese
 from tensorflow.keras.models import load_model
+from streamlit_option_menu import option_menu
 
 @register_keras_serializable()
 def euclidean_distance(vects):
@@ -28,11 +29,63 @@ def get_next_filename(folder, suku):
     next_number = max(numbers, default=0) + 1
     return f"{suku}_{next_number}.jpg"
 
-def main():
-    st.title("Deteksi Wajah dan Klasifikasi Suku dengan Siamese Network")
-    mode = st.radio("Pilih Mode:", ["Tambah Data", "Deteksi Suku"])
 
-    if mode == "Tambah Data":
+st.set_page_config(page_title="C6 - Tubes ETS PCD", layout="wide")
+
+# --- Custom Sidebar Menu (non-dropdown, non-radio, non-button) ---
+with st.sidebar:
+    selected = option_menu(
+        menu_title="Navigasi",  # Judul sidebar
+        options=["Home", "Tambah Data", "Deteksi Suku"],  # Menu
+        icons=["house", "cloud-upload", "search"],  # Ikon opsional
+        menu_icon="cast",  # Ikon utama sidebar
+        default_index=0,
+        orientation="vertical"  # Vertikal bukan dropdown!
+    )
+
+def main():
+
+    st.title("Pengembangan Sistem Pengenalan Wajah dan Deteksi Suku Menggunakan Computer Vision")
+
+    # --- HOME ---
+    if selected == "Home":
+        st.subheader("👥 Kelompok C6 - Pengolahan Citra Digital")
+        cols = st.columns(3)
+        anggota = [
+            {"Nama": "Fauzan Rizky R.", "NIM": "231511076", "foto": "images/wildan.jpg"},
+            {"Nama": "Muhammad Wildan G.", "NIM": "231511087", "foto": "images/wildan.jpg"},
+            {"Nama": "Restu Akbar", "NIM": "231511088", "foto": "images/wildan.jpg"},
+        ]
+
+        cols = st.columns(3)
+
+        for i, col in enumerate(cols):
+            with col:
+                st.image(anggota[i]["foto"], width=150)
+                st.markdown(f"**{anggota[i]['Nama']}**")
+                st.markdown(f"**{anggota[i]['NIM']}**")
+
+
+        # st.image("images/foto_kelompok.png", caption="Kelompok C6", use_column_width=True)
+
+
+        st.markdown("""
+        <div style='background-color: #383838; padding: 20px; border-radius: 10px;'>
+            <h3>Deskripsi Aplikasi</h3>
+            <p>
+                Aplikasi ini dibuat untuk mendeteksi wajah dan mengklasifikasikan etnis/suku pengguna berdasarkan citra wajah.
+                Model yang digunakan adalah Siamese Network dengan MTCNN untuk deteksi wajah.
+                Fitur utama aplikasi ini yaitu:
+                - Menambah data wajah berdasarkan suku,
+                - Mendeteksi wajah dari gambar dan mengklasifikasikannya ke suku paling mirip.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        
+    # --- TAMBAH DATA ---
+    elif selected == "Tambah Data":
+        st.subheader("📥 Tambah Data Wajah ke Dataset")
         suku = st.selectbox("Pilih Suku:", ["jawa", "sunda", "batak", "ambon", "padang", "cina"])
         uploaded_files = st.file_uploader("Upload Gambar", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
@@ -64,12 +117,15 @@ def main():
             if failure_count > 0:
                 st.warning(f"{failure_count} gambar tidak berhasil diproses atau tidak ada wajah yang terdeteksi.")
 
-
-
-    elif mode == "Deteksi Suku":
+    # --- DETEKSI SUKU ---
+    elif selected == "Deteksi Suku":
+        st.subheader("🔍 Deteksi Suku dari Gambar Wajah")
         uploaded_file = st.file_uploader("Upload Gambar Wajah", type=["jpg", "jpeg", "png"])
+
         if uploaded_file:
             image = Image.open(uploaded_file)
+            st.image(image, caption="Gambar yang diunggah", use_column_width=True)
+
             image_path = "temp.jpg"
             image.save(image_path)
 
@@ -83,8 +139,7 @@ def main():
                 if label is not None:
                     st.success(f"Suku terdeteksi: **{label.upper()}** (jarak: {distance:.4f})")
                 else:
-                    st.warning(
-                        "Model tidak dapat mengenali suku dari wajah ini. Pastikan galeri pembanding tersedia dan jelas.")
+                    st.warning("Model tidak dapat mengenali suku dari wajah ini. Pastikan galeri pembanding tersedia dan jelas.")
             else:
                 st.warning("Tidak ada wajah terdeteksi.")
 
