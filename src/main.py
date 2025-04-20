@@ -33,15 +33,14 @@ def get_next_filename(folder, suku):
 
 st.set_page_config(page_title="C6 - Tubes ETS PCD", layout="wide")
 
-# --- Custom Sidebar Menu (non-dropdown, non-radio, non-button) ---
 with st.sidebar:
     selected = option_menu(
-        menu_title="Navigasi",  # Judul sidebar
-        options=["Home", "Tambah Data", "Deteksi Suku"],  # Menu
-        icons=["house", "cloud-upload", "search"],  # Ikon opsional
-        menu_icon="cast",  # Ikon utama sidebar
+        menu_title="Menu",  
+        options=["Home", "Tambah Data", "Deteksi Suku dari File", "Deteksi Suku Sekarang", "Daftar Wajah Dataset",], 
+        icons=["house-door", "cloud-arrow-up", "image", "camera", "folder2-open",],
+        menu_icon="menu-app",  
         default_index=0,
-        orientation="vertical"  # Vertikal bukan dropdown!
+        orientation="vertical" 
     )
 
 def main():
@@ -53,9 +52,9 @@ def main():
         st.subheader("👥 Kelompok C6 - Pengolahan Citra Digital")
         cols = st.columns(3)
         anggota = [
-            {"Nama": "Fauzan Rizky R.", "NIM": "231511076", "foto": "images/wildan.jpg"},
-            {"Nama": "Muhammad Wildan G.", "NIM": "231511087", "foto": "images/wildan.jpg"},
-            {"Nama": "Restu Akbar", "NIM": "231511088", "foto": "images/wildan.jpg"},
+            {"Nama": "Fauzan Rizky R.", "NIM": "231511076", "foto": "src/images/wildan.jpg"},
+            {"Nama": "Muhammad Wildan G.", "NIM": "231511087", "foto": "src/images/wildan.jpg"},
+            {"Nama": "Restu Akbar", "NIM": "231511088", "foto": "src/images/wildan.jpg"},
         ]
 
         cols = st.columns(3)
@@ -76,9 +75,9 @@ def main():
             <p>
                 Aplikasi ini dibuat untuk mendeteksi wajah dan mengklasifikasikan etnis/suku pengguna berdasarkan citra wajah.
                 Model yang digunakan adalah Siamese Network dengan MTCNN untuk deteksi wajah.
-                Fitur utama aplikasi ini yaitu:
-                - Menambah data wajah berdasarkan suku,
-                - Mendeteksi wajah dari gambar dan mengklasifikasikannya ke suku paling mirip.
+            </p>
+            <p>
+                Fitur utama aplikasi ini yaitu: Menambah data wajah berdasarkan suku, Mendeteksi wajah dari gambar dan mengklasifikasikannya ke suku paling mirip, dan Mendeteksi Wajah dari kamera dan mengklasifikasikannya ke suku paling mirip.
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -118,8 +117,30 @@ def main():
             if failure_count > 0:
                 st.warning(f"{failure_count} gambar tidak berhasil diproses atau tidak ada wajah yang terdeteksi.")
 
-    # --- DETEKSI SUKU ---
-    elif selected == "Deteksi Suku":
+    # --- DAFTAR DATA ---
+    elif selected == "Daftar Wajah Dataset":
+        st.subheader("📂 Daftar Data Wajah per Suku")
+        daftar_suku = ["jawa", "sunda", "batak", "ambon", "padang", "cina"]
+        
+        for suku in daftar_suku:
+            st.markdown(f"### {suku.capitalize()}")
+            folder_path = f"data/raw/{suku}"
+            
+            if os.path.exists(folder_path):
+                images = os.listdir(folder_path)
+                cols = st.columns(5) 
+                for i, img_name in enumerate(images):
+                    img_path = os.path.join(folder_path, img_name)
+                    try:
+                        with cols[i % 5]:
+                            st.image(img_path, caption=img_name, width=100)
+                    except:
+                        pass
+            else:
+                st.warning(f"Tidak ditemukan folder untuk suku: {suku}")
+
+    # --- DETEKSI SUKU DARI FILE ---
+    elif selected == "Deteksi Suku dari File":
         st.subheader("🔍 Deteksi Suku dari Gambar Wajah")
         uploaded_file = st.file_uploader("Upload Gambar Wajah", type=["jpg", "jpeg", "png"])
 
@@ -144,6 +165,11 @@ def main():
                     st.warning("Model tidak dapat mengenali suku dari wajah ini.")
             else:
                 st.warning("Tidak ada wajah terdeteksi.")
+
+    # --- DETEKSI SUKU DARI KAMERA ---
+    elif selected == "Deteksi Suku Sekarang":
+        st.subheader("📸 Deteksi Suku dari Kamera")
+        
 
 if __name__ == "__main__":
     main()
