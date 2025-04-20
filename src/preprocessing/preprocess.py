@@ -16,7 +16,7 @@ def detect_face_mtcnn(image_path, output_folder, filename):
 
     # Menyimpan gambar dengan wajah terdeteksi (opsional untuk visualisasi, bisa dihapus jika tidak dibutuhkan)
     output_image_path = os.path.join(output_folder, f"processed_{suku}_{nomor}.jpg")
-    cv2.imwrite(output_image_path, image)
+    # cv2.imwrite(output_image_path, image)
 
     cropped_path = None
 
