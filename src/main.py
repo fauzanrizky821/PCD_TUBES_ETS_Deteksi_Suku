@@ -17,10 +17,11 @@ def euclidean_distance(vects):
     return tf.sqrt(tf.reduce_sum(tf.square(x - y), axis=1, keepdims=True))
 
 # Load model tanpa error
-siamese_model = load_model("model/siamese_model.h5", compile=False)
+siamese_model = load_model("model/siamese_model.keras", compile=True)
+print(siamese_model)
 
 # Folder galeri yang digunakan untuk pembandingan
-gallery_folder = "data/prediction/"
+gallery_folder = "data/gallery/"
 os.makedirs(gallery_folder, exist_ok=True)
 
 def get_next_filename(folder, suku):
@@ -82,7 +83,7 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-        
+
     # --- TAMBAH DATA ---
     elif selected == "Tambah Data":
         st.subheader("📥 Tambah Data Wajah ke Dataset")
@@ -126,7 +127,7 @@ def main():
             image = Image.open(uploaded_file)
             st.image(image, caption="Gambar yang diunggah", use_column_width=True)
 
-            image_path = "temp.jpg"
+            image_path = "data/temp/temp.jpg"
             image.save(image_path)
 
             output_folder = f"data/temp/"
@@ -135,11 +136,12 @@ def main():
             _, faces, _ = detect_face_mtcnn_suku(image_path, output_folder, "temp.jpg")
             if faces:
                 face = Image.open("data/temp/temp_1_cropped_1.jpg")
-                label, distance = predict_suku_siamese(face, gallery_folder, siamese_model)
+                label, distance, confidence, avg_distances, sorted_distances = predict_suku_siamese(face, gallery_folder, siamese_model)
+
                 if label is not None:
-                    st.success(f"Suku terdeteksi: **{label.upper()}** (jarak: {distance:.4f})")
+                    st.success(f"\n\n**Suku terdeteksi: {label.upper()}** (jarak: {distance:.4f}) (confidence: {confidence:.2f})")
                 else:
-                    st.warning("Model tidak dapat mengenali suku dari wajah ini. Pastikan galeri pembanding tersedia dan jelas.")
+                    st.warning("Model tidak dapat mengenali suku dari wajah ini.")
             else:
                 st.warning("Tidak ada wajah terdeteksi.")
 
