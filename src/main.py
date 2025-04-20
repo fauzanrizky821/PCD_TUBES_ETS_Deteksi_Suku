@@ -11,14 +11,28 @@ from model.predict_siamese import predict_suku_siamese
 from tensorflow.keras.models import load_model
 from streamlit_option_menu import option_menu
 
-@register_keras_serializable()
-def euclidean_distance(vects):
-    x, y = vects
-    return tf.sqrt(tf.reduce_sum(tf.square(x - y), axis=1, keepdims=True))
+from model.train_model import predict_suku_mobilenetv2
+
+
+# @register_keras_serializable()
+# def euclidean_distance(vects):
+#     x, y = vects
+#     return tf.sqrt(tf.reduce_sum(tf.square(x - y), axis=1, keepdims=True))
+
+def generate_class_indices(dataset_path):
+    suku_folders = sorted(os.listdir(dataset_path))  # sort biar konsisten
+    class_indices = {suku: idx for idx, suku in enumerate(suku_folders)}
+    return class_indices
+
+class_indices = generate_class_indices("data/processed/")
 
 # Load model tanpa error
-siamese_model = load_model("model/siamese_model.keras", compile=True)
-print(siamese_model)
+# siamese_model = load_model("model/siamese_model.keras", compile=True)
+# print(siamese_model)
+
+# Load model MobileNetV2
+mobilenet_model = load_model("model/mobilenetv2_model.h5", compile=True)
+print(mobilenet_model)
 
 # Folder galeri yang digunakan untuk pembandingan
 gallery_folder = "data/gallery/"
@@ -136,10 +150,10 @@ def main():
             _, faces, _ = detect_face_mtcnn_suku(image_path, output_folder, "temp.jpg")
             if faces:
                 face = Image.open("data/temp/temp_1_cropped_1.jpg")
-                label, distance, confidence, avg_distances, sorted_distances = predict_suku_siamese(face, gallery_folder, siamese_model)
+                predicted_suku, confidence = predict_suku_mobilenetv2(face, mobilenet_model, class_indices)
 
-                if label is not None:
-                    st.success(f"\n\n**Suku terdeteksi: {label.upper()}** (jarak: {distance:.4f}) (confidence: {confidence:.2f})")
+                if predicted_suku is not None:
+                    st.success(f"\n\n**Suku terdeteksi: {predicted_suku.upper()}** (confidence: {confidence:.2f})")
                 else:
                     st.warning("Model tidak dapat mengenali suku dari wajah ini.")
             else:
