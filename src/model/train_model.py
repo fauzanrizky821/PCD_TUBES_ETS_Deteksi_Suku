@@ -13,6 +13,8 @@ from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_i
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, ConfusionMatrixDisplay, confusion_matrix
 
+from model.predict_suku import predict_suku_mobilenetv2
+
 # Disable GPU (already set for CPU-only)
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
@@ -47,17 +49,6 @@ logger.info(f"Current working directory: {os.getcwd()}")
 
 # Add a test log to confirm logger is working
 logger.info("Logging test: Script started successfully")
-
-# ===================== PREPROCESS IMAGE =====================
-def preprocess_face(face_image, target_size=(224, 224)):
-    try:
-        face_image = face_image.resize(target_size)
-        face_array = np.array(face_image).astype("float32")
-        face_array = preprocess_input(face_array)
-        return np.expand_dims(face_array, axis=0)
-    except Exception as e:
-        logger.error(f"Error preprocessing image: {e}")
-        return None
 
 # ===================== AUGMENT AND SAVE IMAGES =====================
 def augment_and_save_images(image_paths, labels, class_indices, augment_dir, num_augmented=5):
@@ -231,21 +222,7 @@ def load_dataset(dataset_path):
 
     return image_paths, labels, class_indices
 
-# ===================== PREDICT SUKU =====================
-def predict_suku_mobilenetv2(input_image, model, class_indices):
-    processed_image = preprocess_face(input_image)
-    if processed_image is None:
-        logger.error("Failed to preprocess input image")
-        return "Unknown", 0.0
 
-    prediction = model.predict(processed_image, verbose=0)
-    predicted_idx = np.argmax(prediction, axis=1)[0]
-    confidence = np.max(prediction)
-    suku_labels = {v: k for k, v in class_indices.items()}
-    predicted_suku = suku_labels.get(predicted_idx, "Unknown")
-
-    logger.info(f"Predicted suku: {predicted_suku} (Confidence: {confidence:.4f})")
-    return predicted_suku, float(confidence)
 
 def get_class_weights(labels, class_indices):
     class_weights = compute_class_weight(
@@ -261,7 +238,7 @@ if __name__ == "__main__":
     try:
         # Hyperparameters
         batch_size = 32  # Increased for 16 GB RAM
-        epochs = 10      # Increased for better convergence
+        epochs = 25      # Increased for better convergence
         learning_rate = 1e-4
         image_size = (224, 224)
         num_augmented_per_image = 5  # Number of augmented images per original image
@@ -279,13 +256,15 @@ if __name__ == "__main__":
         image_paths, labels, class_indices = load_dataset(dataset_dir)
         inv_class_indices = {v: k for k, v in class_indices.items()}
 
-        # Stratified split: Train, Validation, Test
+        # Stratified split: Train (70%), Validation (15%), Test (15%)
         train_paths, test_paths, train_labels, test_labels = train_test_split(
-            image_paths, labels, test_size=0.2, stratify=labels, random_state=42
+            image_paths, labels, test_size=0.15, stratify=labels, random_state=42
         )
+
         train_paths, val_paths, train_labels, val_labels = train_test_split(
-            train_paths, train_labels, test_size=0.1, stratify=train_labels, random_state=42
+            train_paths, train_labels, test_size=0.1765, stratify=train_labels, random_state=42
         )
+
         logger.info(f"Train: {len(train_paths)}, Val: {len(val_paths)}, Test: {len(test_paths)}")
 
         # Augment the training set and save to disk
@@ -318,7 +297,8 @@ if __name__ == "__main__":
         # Callbacks
         os.makedirs("model", exist_ok=True)
         callbacks = [
-            EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
+            EarlyStopping(monitor='val_loss', patience=7, restore_best_weights=True),  # Increased patience
+            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6),
             ModelCheckpoint("model/mobilenetv2_best.h5", save_best_only=True)
         ]
 
@@ -326,8 +306,8 @@ if __name__ == "__main__":
         class_weight_dict = get_class_weights(train_labels, class_indices)
         logger.info(f"Class weights after augmentation: {class_weight_dict}")
 
-        # Train model
-        logger.info("Starting training")
+        # Train model (initial training)
+        logger.info("Starting initial training")
         history = mobilenetv2_model.fit(
             train_gen,
             validation_data=val_gen,
@@ -339,11 +319,44 @@ if __name__ == "__main__":
         # Log memory usage after training
         log_memory_usage()
 
-        # Save final model
+        # Save final model (after initial training)
         mobilenetv2_model.save("model/mobilenetv2_final.h5")
-        logger.info("Final model saved to model/mobilenetv2_final.h5")
+        logger.info("Final model (initial training) saved to model/mobilenetv2_final.h5")
 
-        # Plot training history
+        # Load the best model for fine-tuning
+        logger.info("Loading best model for fine-tuning")
+        mobilenetv2_model = tf.keras.models.load_model("model/mobilenetv2_final_finetuned.h5")
+
+        # Fine-tune the model
+        logger.info("Starting fine-tuning")
+        base_model = mobilenetv2_model.get_layer('mobilenetv2_1.00_224')  # Adjust name if needed
+        base_model.trainable = True
+        for layer in base_model.layers[:100]:
+            layer.trainable = False
+        mobilenetv2_model.compile(optimizer=Adam(learning_rate=1e-5),
+                                  loss='categorical_crossentropy',
+                                  metrics=['accuracy'])
+        history_fine = mobilenetv2_model.fit(
+            train_gen,
+            validation_data=val_gen,
+            epochs=5,  # Fine-tune for a few epochs
+            callbacks=callbacks,
+            class_weight=class_weight_dict
+        )
+
+        # Save final model (after fine-tuning)
+        mobilenetv2_model.save("model/mobilenetv2_final_finetuned.h5")
+        logger.info("Final model (after fine-tuning) saved to model/mobilenetv2_final_finetuned.h5")
+
+        # Load the best model for evaluation and inference
+        logger.info("Loading best model for evaluation and inference")
+        mobilenetv2_model = tf.keras.models.load_model("model/mobilenetv2_final_finetuned.h5")
+
+        # Plot training history (combine initial and fine-tuning)
+        history.history['accuracy'] += history_fine.history['accuracy']
+        history.history['val_accuracy'] += history_fine.history['val_accuracy']
+        history.history['loss'] += history_fine.history['loss']
+        history.history['val_loss'] += history_fine.history['val_loss']
         plot_training_history(history)
 
         # Evaluation on test set
