@@ -13,7 +13,7 @@ from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_i
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, ConfusionMatrixDisplay, confusion_matrix
 
-from model.predict_suku import predict_suku_mobilenetv2
+from predict_suku import predict_suku_mobilenetv2
 
 # Disable GPU (already set for CPU-only)
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -222,8 +222,6 @@ def load_dataset(dataset_path):
 
     return image_paths, labels, class_indices
 
-
-
 def get_class_weights(labels, class_indices):
     class_weights = compute_class_weight(
         'balanced',
@@ -283,21 +281,27 @@ if __name__ == "__main__":
         # Log memory usage after loading data
         log_memory_usage()
 
-        # Build model
-        mobilenetv2_model = build_mobilenetv2_classifier(num_classes=len(class_indices), input_shape=(*image_size, 3))
+        # Build or load model
+        model_path = "model/mobilenetv2_best.h5"
+        if os.path.exists(model_path):
+            logger.info(f"Loading existing model from {model_path}")
+            mobilenetv2_model = tf.keras.models.load_model(model_path)
+        else:
+            logger.info("No existing model found, building new model")
+            mobilenetv2_model = build_mobilenetv2_classifier(num_classes=len(class_indices), input_shape=(*image_size, 3))
 
         # Compile
         mobilenetv2_model.compile(optimizer=Adam(learning_rate),
                                   loss='categorical_crossentropy',
                                   metrics=['accuracy'])
 
-        # Log memory usage after building model
+        # Log memory usage after building/loading model
         log_memory_usage()
 
         # Callbacks
         os.makedirs("model", exist_ok=True)
         callbacks = [
-            EarlyStopping(monitor='val_loss', patience=7, restore_best_weights=True),  # Increased patience
+            EarlyStopping(monitor='val_loss', patience=7, restore_best_weights=True),
             ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6),
             ModelCheckpoint("model/mobilenetv2_best.h5", save_best_only=True)
         ]
@@ -323,11 +327,7 @@ if __name__ == "__main__":
         mobilenetv2_model.save("model/mobilenetv2_final.h5")
         logger.info("Final model (initial training) saved to model/mobilenetv2_final.h5")
 
-        # Load the best model for fine-tuning
-        logger.info("Loading best model for fine-tuning")
-        mobilenetv2_model = tf.keras.models.load_model("model/mobilenetv2_final_finetuned.h5")
-
-        # Fine-tune the model
+        # Fine-Tune the model
         logger.info("Starting fine-tuning")
         base_model = mobilenetv2_model.get_layer('mobilenetv2_1.00_224')  # Adjust name if needed
         base_model.trainable = True
@@ -339,7 +339,7 @@ if __name__ == "__main__":
         history_fine = mobilenetv2_model.fit(
             train_gen,
             validation_data=val_gen,
-            epochs=5,  # Fine-tune for a few epochs
+            epochs=5,
             callbacks=callbacks,
             class_weight=class_weight_dict
         )
@@ -350,7 +350,7 @@ if __name__ == "__main__":
 
         # Load the best model for evaluation and inference
         logger.info("Loading best model for evaluation and inference")
-        mobilenetv2_model = tf.keras.models.load_model("model/mobilenetv2_final_finetuned.h5")
+        mobilenetv2_model = tf.keras.models.load_model("model/mobilenetv2_best.h5")
 
         # Plot training history (combine initial and fine-tuning)
         history.history['accuracy'] += history_fine.history['accuracy']
