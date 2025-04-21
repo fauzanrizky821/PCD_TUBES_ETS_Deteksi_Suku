@@ -1,5 +1,5 @@
 # main.py
-
+import cv2
 import streamlit as st
 import tensorflow as tf
 import os
@@ -17,20 +17,8 @@ from streamlit_option_menu import option_menu
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
 
-@register_keras_serializable()
-def euclidean_distance(vects):
-    x, y = vects
-    return tf.sqrt(tf.reduce_sum(tf.square(x - y), axis=1, keepdims=True))
+from model.predict_suku import predict_suku_mobilenetv2
 
-# Load model tanpa error
-siamese_model = load_model("model/siamese_model.keras", compile=True)
-print(siamese_model)
-
-logger = logging.getLogger(__name__)
-
-# Folder galeri yang digunakan untuk pembandingan
-gallery_folder = "data/gallery/"
-os.makedirs(gallery_folder, exist_ok=True)
 
 def get_next_filename(folder, suku):
     existing_files = [f for f in os.listdir(folder) if f.startswith(suku)]
@@ -132,7 +120,7 @@ def main():
         
         for suku in daftar_suku:
             st.markdown(f"### {suku.capitalize()}")
-            folder_path = f"data/raw/{suku}"
+            folder_path = f"data/processed/{suku}"
             
             if os.path.exists(folder_path):
                 images = os.listdir(folder_path)
@@ -149,12 +137,24 @@ def main():
 
     # --- DETEKSI SUKU DARI FILE ---
     elif selected == "Deteksi Suku dari File":
+        def generate_class_indices(dataset_path):
+            suku_folders = sorted(os.listdir(dataset_path))  # sort biar konsisten
+            class_indices = {suku: idx for idx, suku in enumerate(suku_folders)}
+            return class_indices
+
+        class_indices = generate_class_indices("data/processed/")
+        print(class_indices)
+
+        # Load model MobileNetV2
+        mobilenet_model = load_model("model/mobilenetv2_final_finetuned.h5", compile=True)
+        print(mobilenet_model)
+
         st.subheader("🔍 Deteksi Suku dari Gambar Wajah")
         uploaded_file = st.file_uploader("Upload Gambar Wajah", type=["jpg", "jpeg", "png"])
 
         if uploaded_file:
             image = Image.open(uploaded_file)
-            st.image(image, caption="Gambar yang diunggah", use_column_width=True)
+            st.image(image, caption="Gambar yang diunggah", width=300)
 
             image_path = "data/temp/temp.jpg"
             image.save(image_path)
@@ -165,10 +165,10 @@ def main():
             _, faces, _ = detect_face_mtcnn_suku(image_path, output_folder, "temp.jpg")
             if faces:
                 face = Image.open("data/temp/temp_1_cropped_1.jpg")
-                label, distance, confidence, avg_distances, sorted_distances = predict_suku_siamese(face, gallery_folder, siamese_model)
+                predicted_suku, confidence = predict_suku_mobilenetv2(face, mobilenet_model, class_indices)
 
-                if label is not None:
-                    st.success(f"\n\n**Suku terdeteksi: {label.upper()}** (jarak: {distance:.4f}) (confidence: {confidence:.2f})")
+                if predicted_suku is not None:
+                    st.success(f"\n\n**Suku terdeteksi: {predicted_suku.upper()}** (confidence: {confidence:.2f})")
                 else:
                     st.warning("Model tidak dapat mengenali suku dari wajah ini.")
             else:
@@ -176,8 +176,52 @@ def main():
 
     # --- DETEKSI SUKU DARI KAMERA ---
     elif selected == "Deteksi Suku Sekarang":
+        def generate_class_indices(dataset_path):
+            suku_folders = sorted(os.listdir(dataset_path))  # sort biar konsisten
+            class_indices = {suku: idx for idx, suku in enumerate(suku_folders)}
+            return class_indices
+
+        class_indices = generate_class_indices("data/processed/")
+
+        # Load model MobileNetV2
+        mobilenet_model = load_model("model/mobilenetv2_final_finetuned.h5", compile=True)
+
         st.subheader("📸 Deteksi Suku dari Kamera")
 
+        capture_btn = st.button("Aktifkan Kamera dan Deteksi")
+
+        if capture_btn:
+            st.warning("Tunggu sebentar, sedang mengakses kamera...")
+
+            # --- AKSES KAMERA DAN TANGKAP FRAME ---
+            cap = cv2.VideoCapture(0)  # 0 = kamera default
+            ret, frame = cap.read()
+            cap.release()
+
+            if not ret:
+                st.error("Gagal mengakses kamera.")
+            else:
+                # Simpan frame sebagai file temporer
+                temp_image_path = "data/temp/webcam_temp.jpg"
+                os.makedirs("data/temp", exist_ok=True)
+                cv2.imwrite(temp_image_path, frame)
+
+                st.image(frame, channels="BGR", caption="Gambar dari Kamera", width=300)
+
+                # Deteksi wajah dan prediksi
+                _, faces, _ = detect_face_mtcnn_suku(temp_image_path, "data/temp", "webcam_temp.jpg")
+
+                if faces:
+                    face = Image.open("data/temp/webcam_temp_1_cropped_1.jpg")
+                    predicted_suku, confidence = predict_suku_mobilenetv2(face, mobilenet_model, class_indices)
+
+                    if predicted_suku is not None:
+                        st.success(f"**Suku terdeteksi: {predicted_suku.upper()}** (confidence: {confidence:.2f})")
+                    else:
+                        st.warning("Model tidak dapat mengenali suku dari wajah ini.")
+                else:
+                    st.warning("Tidak ada wajah terdeteksi dari gambar kamera.")
+        
 
     elif selected == "Face Similarity":
         st.title("Face Similarity Detection with FaceNet")

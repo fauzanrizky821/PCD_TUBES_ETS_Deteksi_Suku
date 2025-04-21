@@ -1,160 +1,172 @@
 import os
 import numpy as np
 from PIL import Image
-from sklearn.model_selection import train_test_split
 import tensorflow as tf
+from sklearn.utils.class_weight import compute_class_weight
 from tensorflow.keras import layers, Model
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.utils import Sequence
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, Callback
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 import matplotlib.pyplot as plt
 import logging
+from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_input
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, ConfusionMatrixDisplay, confusion_matrix
+
+from predict_suku import predict_suku_mobilenetv2
+
+# Disable GPU (already set for CPU-only)
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
+# Disable oneDNN optimizations to avoid potential CPU issues
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
+# Optimize CPU threads for 12-thread CPU
+tf.config.threading.set_intra_op_parallelism_threads(8)
+tf.config.threading.set_inter_op_parallelism_threads(8)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Set random seeds for reproducibility
-tf.random.set_seed(42)
-np.random.seed(42)
+# Log TensorFlow version and CPU info
+logger.info(f"TensorFlow version: {tf.__version__}")
+logger.info(f"Num CPUs Available: {len(tf.config.list_physical_devices('CPU'))}")
 
-# Optimize CPU usage
-tf.config.threading.set_inter_op_parallelism_threads(12)
-tf.config.threading.set_intra_op_parallelism_threads(12)
+# Optional memory logging (requires psutil)
+try:
+    import psutil
+    def log_memory_usage():
+        process = psutil.Process(os.getpid())
+        mem_info = process.memory_info()
+        logger.info(f"Memory usage: {mem_info.rss / 1024 / 1024:.2f} MB")
+except ImportError:
+    def log_memory_usage():
+        logger.info("Memory usage logging skipped (psutil not installed)")
 
-# ===================== LOAD IMAGE =====================
-def load_image(image_path, target_size=(160, 160)):
-    try:
-        image = Image.open(image_path).convert('RGB')
-        image = image.resize(target_size)
-        image = np.array(image)
-        return preprocess_input(image)  # Normalize for MobileNetV2
-    except Exception as e:
-        logger.error(f"Error loading image {image_path}: {e}")
-        return np.zeros((*target_size, 3))
+# Log working directory
+logger.info(f"Current working directory: {os.getcwd()}")
 
-# ===================== BUILD BASE CNN =====================
-def build_base_network(input_shape):
+# Add a test log to confirm logger is working
+logger.info("Logging test: Script started successfully")
+
+# ===================== AUGMENT AND SAVE IMAGES =====================
+def augment_and_save_images(image_paths, labels, class_indices, augment_dir, num_augmented=5):
+    """
+    Augment training images and save them to a new directory.
+    Returns the updated list of image paths and labels.
+    """
+    datagen = ImageDataGenerator(
+        rotation_range=20,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        shear_range=0.15,
+        zoom_range=0.15,
+        horizontal_flip=True,
+        brightness_range=[0.7, 1.3],
+        fill_mode='nearest'
+    )
+
+    inv_class_indices = {v: k for k, v in class_indices.items()}
+    augmented_image_paths = image_paths.copy()
+    augmented_labels = labels.copy()
+
+    for idx, (img_path, label) in enumerate(zip(image_paths, labels)):
+        class_name = inv_class_indices[label]
+        class_dir = os.path.join(augment_dir, class_name)
+        os.makedirs(class_dir, exist_ok=True)
+
+        img = Image.open(img_path).convert('RGB')
+        img = img.resize((224, 224))
+        img_array = np.array(img).astype("float32")
+        img_array = np.expand_dims(img_array, axis=0)
+
+        # Generate augmented images
+        for i in range(num_augmented):
+            augmented_iter = datagen.flow(img_array, batch_size=1)
+            augmented_img = next(augmented_iter)[0].astype(np.uint8)
+            augmented_img = Image.fromarray(augmented_img)
+
+            # Save augmented image
+            base_filename = os.path.basename(img_path)
+            name, ext = os.path.splitext(base_filename)
+            aug_filename = f"{name}_aug_{i}{ext}"
+            aug_path = os.path.join(class_dir, aug_filename)
+            augmented_img.save(aug_path)
+
+            augmented_image_paths.append(aug_path)
+            augmented_labels.append(label)
+
+        logger.info(f"Augmented {idx + 1}/{len(image_paths)} images for class {class_name}")
+
+    logger.info(f"Total images after augmentation: {len(augmented_image_paths)}")
+    return augmented_image_paths, augmented_labels
+
+# ===================== BUILD MOBILENETV2 CLASSIFIER =====================
+def build_mobilenetv2_classifier(input_shape, num_classes):
     base_model = MobileNetV2(input_shape=input_shape, include_top=False, weights='imagenet')
-    base_model.trainable = False  # Freeze pre-trained layers
-    model = tf.keras.Sequential([
-        base_model,
-        layers.GlobalAveragePooling2D(),
-        layers.Dense(256, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0005)),
-        layers.Dropout(0.5),
-        layers.Dense(128, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.0005))
-    ])
-    return model
+    base_model.trainable = False
 
-# ===================== BUILD SIAMESE =====================
-def build_siamese_network(input_shape):
-    input1 = layers.Input(shape=input_shape, name="input_1")
-    input2 = layers.Input(shape=input_shape, name="input_2")
+    inputs = layers.Input(shape=input_shape)
+    x = base_model(inputs, training=False)
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dense(128, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
+    x = layers.Dropout(0.5)(x)
+    outputs = layers.Dense(num_classes, activation='softmax', name='suku_output')(x)
 
-    base_network = build_base_network(input_shape)
-    processed_input1 = base_network(input1)
-    processed_input2 = base_network(input2)
-
-    def euclidean_distance(vects):
-        x, y = vects
-        return tf.sqrt(tf.reduce_sum(tf.square(x - y), axis=1, keepdims=True) + 1e-10)
-
-    distance = layers.Lambda(euclidean_distance)([processed_input1, processed_input2])
-    output = layers.Dense(1, activation="sigmoid")(distance)
-
-    model = Model(inputs=[input1, input2], outputs=output)
-    logger.info("Siamese model built successfully")
+    model = Model(inputs, outputs)
+    logger.info("MobileNetV2 classifier built successfully")
     model.summary(print_fn=lambda x: logger.info(x))
     return model
 
-# ===================== PAIR CREATION =====================
-def create_pairs_from_folder(dataset_path):
-    pairs = []
-    labels = []
-    classes = sorted([d for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d))])
-    logger.info(f"Found {len(classes)} classes in {dataset_path}")
-
-    for class_name in classes:
-        class_path = os.path.join(dataset_path, class_name)
-        image_files = [f for f in os.listdir(class_path) if 'cropped' in f and f.endswith(('.png', '.jpg', '.jpeg'))]
-        logger.info(f"Class {class_name}: {len(image_files)} images")
-
-        # Positive pairs
-        for i in range(len(image_files)):
-            for j in range(i + 1, len(image_files)):
-                img1 = os.path.join(class_path, image_files[i])
-                img2 = os.path.join(class_path, image_files[j])
-                pairs.append([img1, img2])
-                labels.append(1)
-
-        # Negative pairs
-        for other_class in classes:
-            if other_class == class_name:
-                continue
-            other_path = os.path.join(dataset_path, other_class)
-            other_images = [f for f in os.listdir(other_path) if 'cropped' in f and f.endswith(('.png', '.jpg', '.jpeg'))]
-            for img1_file in image_files:
-                sampled_negatives = np.random.choice(other_images, size=min(10, len(other_images)), replace=False)
-                for img2_file in sampled_negatives:
-                    img1 = os.path.join(class_path, img1_file)
-                    img2 = os.path.join(other_path, img2_file)
-                    pairs.append([img1, img2])
-                    labels.append(0)
-
-    pairs = np.array(pairs)
-    labels = np.array(labels)
-    logger.info(f"Created {len(pairs)} pairs: {np.sum(labels)} positive, {len(labels) - np.sum(labels)} negative")
-    return pairs, labels
-
-# ===================== DATA GENERATOR WITH AUGMENTATION =====================
-class SiameseDataGenerator(Sequence):
-    def __init__(self, pairs, labels, batch_size=24, target_size=(160, 160), augment=False):
-        self.pairs = pairs
+# ===================== DATA GENERATOR =====================
+class CNNDataGenerator(tf.keras.utils.Sequence):
+    def __init__(self, image_paths, labels, class_indices, batch_size=32, target_size=(224, 224), augment=False, **kwargs):
+        super().__init__(**kwargs)
+        self.image_paths = image_paths
         self.labels = labels
+        self.class_indices = class_indices
         self.batch_size = batch_size
         self.target_size = target_size
-        self.indices = np.arange(len(self.pairs))
+        self.indices = np.arange(len(self.image_paths), dtype=np.int64)
         self.augment = augment
         if augment:
             self.datagen = ImageDataGenerator(
                 rotation_range=20,
                 width_shift_range=0.2,
                 height_shift_range=0.2,
+                shear_range=0.15,
+                zoom_range=0.15,
                 horizontal_flip=True,
                 brightness_range=[0.7, 1.3],
-                zoom_range=[0.8, 1.2],
-                shear_range=0.1,
                 fill_mode='nearest'
             )
         else:
             self.datagen = None
-        logger.info(f"Data generator initialized with {len(pairs)} pairs, augment={augment}")
+        logger.info(f"Data generator initialized with {len(image_paths)} images, augment={augment}")
 
     def __len__(self):
-        return int(np.ceil(len(self.pairs) / self.batch_size))
+        return int(np.ceil(len(self.image_paths) / self.batch_size))
 
     def __getitem__(self, idx):
         batch_indices = self.indices[idx * self.batch_size:(idx + 1) * self.batch_size]
-        X1_batch, X2_batch, y_batch = [], [], []
+        X_batch, y_batch = [], []
 
         for i in batch_indices:
-            img1 = load_image(self.pairs[i][0], self.target_size)
-            img2 = load_image(self.pairs[i][1], self.target_size)
+            img_path = self.image_paths[i]
             label = self.labels[i]
+            img = Image.open(img_path).convert('RGB')
+            img = img.resize(self.target_size)
+            img_array = np.array(img).astype("float32")
+            img_array = preprocess_input(img_array)
 
             if self.augment and self.datagen:
-                seed = np.random.randint(0, 10000)
-                img1 = self.datagen.random_transform(img1, seed=seed)
-                img2 = self.datagen.random_transform(img2, seed=seed)
+                img_array = self.datagen.random_transform(img_array)
 
-            X1_batch.append(img1)
-            X2_batch.append(img2)
+            X_batch.append(img_array)
             y_batch.append(label)
 
-        return {"input_1": np.array(X1_batch), "input_2": np.array(X2_batch)}, np.array(y_batch)
+        return np.array(X_batch), tf.keras.utils.to_categorical(y_batch, num_classes=len(self.class_indices))
 
     def on_epoch_end(self):
         np.random.shuffle(self.indices)
@@ -186,67 +198,197 @@ def plot_training_history(history, save_dir="model"):
     plt.close()
     logger.info("Loss plot saved to model/loss_plot.png")
 
-# ===================== PREDICTION DISTRIBUTION CALLBACK =====================
-class OutputDistributionCallback(Callback):
-    def __init__(self, validation_data):
-        super().__init__()
-        self.validation_data = validation_data
+# ===================== LOAD DATASET =====================
+def load_dataset(dataset_path):
+    image_paths = []
+    labels = []
+    classes = sorted([d for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d))])
+    class_indices = {cls: idx for idx, cls in enumerate(classes)}
+    logger.info(f"Found {len(classes)} classes: {classes}")
 
-    def on_epoch_end(self, epoch, logs=None):
-        preds = self.model.predict(self.validation_data)
-        logger.info(f"Epoch {epoch+1} - Prediction mean: {np.mean(preds):.4f}, std: {np.std(preds):.4f}")
+    class_counts = {}
+    for cls in classes:
+        cls_path = os.path.join(dataset_path, cls)
+        image_files = [f for f in os.listdir(cls_path) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+        class_counts[cls] = len(image_files)
+        for filename in image_files:
+            image_paths.append(os.path.join(cls_path, filename))
+            labels.append(class_indices[cls])
 
-# ===================== TRAINING =====================
+    logger.info(f"Loaded {len(image_paths)} images")
+    logger.info("Class distribution:")
+    for cls, count in class_counts.items():
+        logger.info(f"{cls}: {count} images")
+
+    return image_paths, labels, class_indices
+
+def get_class_weights(labels, class_indices):
+    class_weights = compute_class_weight(
+        'balanced',
+        classes=np.unique(labels),
+        y=labels
+    )
+    class_weight_dict = {class_idx: weight for class_idx, weight in zip(class_indices.values(), class_weights)}
+    return class_weight_dict
+
+# ===================== TRAINING AND INFERENCE =====================
 if __name__ == "__main__":
-    dataset_path = 'data/processed/'
-    if not os.path.exists(dataset_path):
-        logger.error(f"Dataset path {dataset_path} does not exist")
-        exit(1)
+    try:
+        # Hyperparameters
+        batch_size = 32  # Increased for 16 GB RAM
+        epochs = 25      # Increased for better convergence
+        learning_rate = 1e-4
+        image_size = (224, 224)
+        num_augmented_per_image = 5  # Number of augmented images per original image
 
-    pairs, labels = create_pairs_from_folder(dataset_path)
+        # Check dataset path
+        dataset_dir = 'data/processed/'
+        logger.info(f"Checking dataset path: {dataset_dir}")
+        logger.info(f"Absolute dataset path: {os.path.abspath(dataset_dir)}")
+        if not os.path.exists(dataset_dir):
+            logger.error(f"Dataset path {dataset_dir} does not exist")
+            exit(1)
+        logger.info(f"Dataset path {dataset_dir} exists")
 
-    pos_pairs = pairs[labels == 1]
-    neg_pairs = pairs[labels == 0]
-    min_pairs = min(len(pos_pairs), len(neg_pairs))
-    pos_pairs = pos_pairs[:min_pairs]
-    neg_pairs = neg_pairs[:min_pairs]
-    pairs = np.concatenate([pos_pairs, neg_pairs])
-    labels = np.concatenate([np.ones(min_pairs), np.zeros(min_pairs)])
-    logger.info(f"Balanced dataset: {len(pairs)} pairs (50% positive, 50% negative)")
+        # Load dataset
+        image_paths, labels, class_indices = load_dataset(dataset_dir)
+        inv_class_indices = {v: k for k, v in class_indices.items()}
 
-    pairs_train, pairs_test, labels_train, labels_test = train_test_split(
-        pairs, labels, test_size=0.2, random_state=42, stratify=labels)
-    logger.info(f"Train: {len(pairs_train)} pairs, Test: {len(pairs_test)} pairs")
+        # Stratified split: Train (70%), Validation (15%), Test (15%)
+        train_paths, test_paths, train_labels, test_labels = train_test_split(
+            image_paths, labels, test_size=0.15, stratify=labels, random_state=42
+        )
 
-    batch_size = 24
-    epochs = 30
-    input_shape = (160, 160, 3)
+        train_paths, val_paths, train_labels, val_labels = train_test_split(
+            train_paths, train_labels, test_size=0.1765, stratify=train_labels, random_state=42
+        )
 
-    train_gen = SiameseDataGenerator(pairs_train, labels_train, batch_size=batch_size, augment=True)
-    test_gen = SiameseDataGenerator(pairs_test, labels_test, batch_size=batch_size, augment=False)
+        logger.info(f"Train: {len(train_paths)}, Val: {len(val_paths)}, Test: {len(test_paths)}")
 
-    siamese_model = build_siamese_network(input_shape)
-    siamese_model.compile(optimizer=Adam(learning_rate=1.5e-4),
-                         loss="binary_crossentropy",
-                         metrics=["accuracy"])
+        # Augment the training set and save to disk
+        augment_dir = 'data/augmented_train/'
+        logger.info(f"Augmenting training set and saving to {augment_dir}")
+        train_paths, train_labels = augment_and_save_images(
+            train_paths, train_labels, class_indices, augment_dir, num_augmented=num_augmented_per_image
+        )
+        logger.info(f"Training set after augmentation: {len(train_paths)} images")
 
-    callbacks = [
-        EarlyStopping(patience=10, restore_best_weights=True, monitor='val_accuracy'),
-        ReduceLROnPlateau(factor=0.5, patience=3, min_lr=1e-6),
-        ModelCheckpoint("model/siamese_model_best.keras", save_best_only=True, monitor='val_accuracy'),
-        OutputDistributionCallback(test_gen)
-    ]
+        # Generators
+        train_gen = CNNDataGenerator(train_paths, train_labels, class_indices, batch_size=batch_size, augment=True)
+        val_gen = CNNDataGenerator(val_paths, val_labels, class_indices, batch_size=batch_size, augment=False)
+        test_gen = CNNDataGenerator(test_paths, test_labels, class_indices, batch_size=batch_size, augment=False)
 
-    history = siamese_model.fit(train_gen,
-                                validation_data=test_gen,
-                                epochs=epochs,
-                                callbacks=callbacks)
+        # Log memory usage after loading data
+        log_memory_usage()
 
-    plot_training_history(history)
+        # Build or load model
+        model_path = "model/mobilenetv2_best.h5"
+        if os.path.exists(model_path):
+            logger.info(f"Loading existing model from {model_path}")
+            mobilenetv2_model = tf.keras.models.load_model(model_path)
+        else:
+            logger.info("No existing model found, building new model")
+            mobilenetv2_model = build_mobilenetv2_classifier(num_classes=len(class_indices), input_shape=(*image_size, 3))
 
-    os.makedirs("model", exist_ok=True)
-    siamese_model.save("model/siamese_model.keras")
-    logger.info("✅ Model saved to model/siamese_model.keras")
+        # Compile
+        mobilenetv2_model.compile(optimizer=Adam(learning_rate),
+                                  loss='categorical_crossentropy',
+                                  metrics=['accuracy'])
 
-    test_loss, test_accuracy = siamese_model.evaluate(test_gen)
-    logger.info(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.4f}")
+        # Log memory usage after building/loading model
+        log_memory_usage()
+
+        # Callbacks
+        os.makedirs("model", exist_ok=True)
+        callbacks = [
+            EarlyStopping(monitor='val_loss', patience=7, restore_best_weights=True),
+            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6),
+            ModelCheckpoint("model/mobilenetv2_best.h5", save_best_only=True)
+        ]
+
+        # Class weights (recompute after augmentation)
+        class_weight_dict = get_class_weights(train_labels, class_indices)
+        logger.info(f"Class weights after augmentation: {class_weight_dict}")
+
+        # Train model (initial training)
+        logger.info("Starting initial training")
+        history = mobilenetv2_model.fit(
+            train_gen,
+            validation_data=val_gen,
+            epochs=epochs,
+            callbacks=callbacks,
+            class_weight=class_weight_dict
+        )
+
+        # Log memory usage after training
+        log_memory_usage()
+
+        # Save final model (after initial training)
+        mobilenetv2_model.save("model/mobilenetv2_final.h5")
+        logger.info("Final model (initial training) saved to model/mobilenetv2_final.h5")
+
+        # Fine-Tune the model
+        logger.info("Starting fine-tuning")
+        base_model = mobilenetv2_model.get_layer('mobilenetv2_1.00_224')  # Adjust name if needed
+        base_model.trainable = True
+        for layer in base_model.layers[:100]:
+            layer.trainable = False
+        mobilenetv2_model.compile(optimizer=Adam(learning_rate=1e-5),
+                                  loss='categorical_crossentropy',
+                                  metrics=['accuracy'])
+        history_fine = mobilenetv2_model.fit(
+            train_gen,
+            validation_data=val_gen,
+            epochs=5,
+            callbacks=callbacks,
+            class_weight=class_weight_dict
+        )
+
+        # Save final model (after fine-tuning)
+        mobilenetv2_model.save("model/mobilenetv2_final_finetuned.h5")
+        logger.info("Final model (after fine-tuning) saved to model/mobilenetv2_final_finetuned.h5")
+
+        # Load the best model for evaluation and inference
+        logger.info("Loading best model for evaluation and inference")
+        mobilenetv2_model = tf.keras.models.load_model("model/mobilenetv2_best.h5")
+
+        # Plot training history (combine initial and fine-tuning)
+        history.history['accuracy'] += history_fine.history['accuracy']
+        history.history['val_accuracy'] += history_fine.history['val_accuracy']
+        history.history['loss'] += history_fine.history['loss']
+        history.history['val_loss'] += history_fine.history['val_loss']
+        plot_training_history(history)
+
+        # Evaluation on test set
+        loss, acc = mobilenetv2_model.evaluate(test_gen)
+        logger.info(f"Test Loss: {loss:.4f}, Test Accuracy: {acc:.4f}")
+
+        # Confusion Matrix
+        y_true = [inv_class_indices[l] for l in test_labels]
+        y_pred = []
+        for p in test_paths:
+            img = Image.open(p).convert('RGB')
+            pred_suku, _ = predict_suku_mobilenetv2(img, mobilenetv2_model, class_indices)
+            y_pred.append(pred_suku)
+
+        logger.info(f"Unique y_true: {set(y_true)}")
+        logger.info(f"Unique y_pred: {set(y_pred)}")
+        logger.info(f"All class labels: {list(class_indices.keys())}")
+        logger.info(f"Jumlah y_true: {len(y_true)}, Jumlah y_pred: {len(y_pred)}")
+
+        # Classification Report
+        logger.info("Classification Report:\n" + classification_report(y_true, y_pred))
+
+        # Confusion Matrix Plot
+        cm = confusion_matrix(y_true, y_pred, labels=list(class_indices.keys()))
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=list(class_indices.keys()))
+        fig, ax = plt.subplots(figsize=(10, 10))
+        disp.plot(ax=ax, xticks_rotation=45, cmap='Blues')
+        plt.title("Confusion Matrix on Test Set")
+        plt.tight_layout()
+        plt.savefig("model/confusion_matrix.png")
+        plt.close()
+        logger.info("Confusion matrix saved to model/confusion_matrix.png")
+    except Exception as e:
+        logger.error(f"Script failed with error: {str(e)}")
+        raise
