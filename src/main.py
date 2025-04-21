@@ -3,13 +3,19 @@
 import streamlit as st
 import tensorflow as tf
 import os
+import time
+import uuid
 from PIL import Image
+import logging
 from keras.models import load_model
 from keras.saving import register_keras_serializable
 from preprocessing.preprocess import detect_face_mtcnn, detect_face_mtcnn_suku
 from model.predict_siamese import predict_suku_siamese
+from model.face_similarity import compare_faces
 from tensorflow.keras.models import load_model
 from streamlit_option_menu import option_menu
+from sklearn.metrics import roc_curve, auc
+import matplotlib.pyplot as plt
 
 @register_keras_serializable()
 def euclidean_distance(vects):
@@ -19,6 +25,8 @@ def euclidean_distance(vects):
 # Load model tanpa error
 siamese_model = load_model("model/siamese_model.keras", compile=True)
 print(siamese_model)
+
+logger = logging.getLogger(__name__)
 
 # Folder galeri yang digunakan untuk pembandingan
 gallery_folder = "data/gallery/"
@@ -36,8 +44,8 @@ st.set_page_config(page_title="C6 - Tubes ETS PCD", layout="wide")
 with st.sidebar:
     selected = option_menu(
         menu_title="Menu",  
-        options=["Home", "Tambah Data", "Deteksi Suku dari File", "Deteksi Suku Sekarang", "Daftar Wajah Dataset",], 
-        icons=["house-door", "cloud-arrow-up", "image", "camera", "folder2-open",],
+        options=["Home", "Tambah Data", "Deteksi Suku dari File", "Deteksi Suku Sekarang", "Daftar Wajah Dataset", "Face Similarity"], 
+        icons=["house-door", "cloud-arrow-up", "image", "camera", "folder2-open", "person-check-fill"],
         menu_icon="menu-app",  
         default_index=0,
         orientation="vertical" 
@@ -169,7 +177,101 @@ def main():
     # --- DETEKSI SUKU DARI KAMERA ---
     elif selected == "Deteksi Suku Sekarang":
         st.subheader("📸 Deteksi Suku dari Kamera")
+
+
+    elif selected == "Face Similarity":
+        st.title("Face Similarity Detection with FaceNet")
         
+        # Create directory for cropped faces
+        os.makedirs("cropped_faces", exist_ok=True)
+
+        if 'history' not in st.session_state:
+            st.session_state.history = []
+        
+        # Upload images
+        col1, col2 = st.columns(2)
+        with col1:
+            uploaded_file1 = st.file_uploader("Choose first image", type=["jpg", "jpeg", "png"])
+            if uploaded_file1 is not None:
+                image1 = Image.open(uploaded_file1)
+                st.image(image1, caption="Image 1", use_column_width=True)
+        
+        with col2:
+            uploaded_file2 = st.file_uploader("Choose second image", type=["jpg", "jpeg", "png"])
+            if uploaded_file2 is not None:
+                image2 = Image.open(uploaded_file2)
+                st.image(image2, caption="Image 2", use_column_width=True)
+        
+        # Similarity threshold
+        threshold = st.slider("Similarity Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05)
+        
+        if st.button("Compare Faces"):
+            if uploaded_file1 is None or uploaded_file2 is None:
+                st.error("Please upload both images")
+            else:
+                with st.spinner("Processing..."):
+                    # Compare faces
+                    result = compare_faces(uploaded_file1, uploaded_file2, threshold)
+                    
+                    # Display results
+                    st.subheader("Results")
+                    st.write(f"Similarity Score: {result['similarity_score']:.4f}")
+                    st.write(f"Distance: {result['distance']:.4f}")
+                    st.write(f"Decision: {result['decision']}")
+                    
+                    # Display cropped faces if available
+                    if result['cropped_path1'] and result['cropped_path2']:
+                        st.subheader("Detected Faces")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.image(result['cropped_path1'], caption="Face 1", use_column_width=True)
+                        with col2:
+                            st.image(result['cropped_path2'], caption="Face 2", use_column_width=True)
+                    
+                    if result['is_match']:
+                        st.success("Jadi, kedua wajah tersebut adalah orang yang sama")
+                    else:
+                        st.warning("jadi, kedua wajah tersebut bukan orang yang sama")
+
+                    # Simpan ke histori
+            st.session_state.history.append(result)
+
+        # Tampilkan histori
+        if st.session_state.history:
+            st.subheader("History of Comparisons")
+            for i, item in enumerate(reversed(st.session_state.history)):
+                st.markdown(f"**Comparison #{len(st.session_state.history)-i}**")
+                cols = st.columns(2)
+                with cols[0]:
+                    st.image(item["cropped_path1"], caption="Face 1", use_column_width=True)
+                with cols[1]:
+                    st.image(item["cropped_path2"], caption="Face 2", use_column_width=True)
+                st.write(f"Similarity Score: {item['similarity_score']:.4f}")
+                st.write(f"Distance: {item['distance']:.4f}")
+                st.write(f"Decision: {item['decision']}")
+                if item['is_match']:
+                    st.success("Match!")
+                else:
+                    st.warning("Not a match!")
+                st.markdown("---")
+
+        # ROC Curve dari histori
+        if len(st.session_state.history) >= 2:
+            st.subheader("ROC Curve from History")
+            scores = [h["similarity_score"] for h in st.session_state.history]
+            labels = [1 if h["is_match"] else 0 for h in st.session_state.history]
+
+            fpr, tpr, thresholds = roc_curve(labels, scores)
+            roc_auc = auc(fpr, tpr)
+
+            fig, ax = plt.subplots()
+            ax.plot(fpr, tpr, color='blue', label=f"ROC Curve (AUC = {roc_auc:.2f})")
+            ax.plot([0, 1], [0, 1], color='red', linestyle='--')
+            ax.set_xlabel("False Positive Rate")
+            ax.set_ylabel("True Positive Rate")
+            ax.set_title("Receiver Operating Characteristic")
+            ax.legend(loc="lower right")
+            st.pyplot(fig)
 
 if __name__ == "__main__":
     main()
