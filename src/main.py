@@ -271,9 +271,9 @@ def main():
                             st.image(result['cropped_path2'], caption="Face 2", use_column_width=True)
                     
                     if result['is_match']:
-                        st.success("Jadi, kedua wajah tersebut TIDAK MIRIP")
+                        st.success("Jadi, kedua wajah tersebut MIRIP")
                     else:
-                        st.warning("jadi, kedua wajah tersebut MIRIP")
+                        st.warning("jadi, kedua wajah tersebut TIDAK MIRIP")
 
 
 if __name__ == "__main__":
