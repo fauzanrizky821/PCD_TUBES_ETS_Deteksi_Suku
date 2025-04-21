@@ -337,6 +337,7 @@ def main():
                                 use_column_width=True,
                             )
                         with col2:
+<<<<<<< HEAD
                             st.image(
                                 result["cropped_path2"],
                                 caption="Face 2",
@@ -345,8 +346,14 @@ def main():
 
                     if result["is_match"]:
                         st.success("Jadi, kedua wajah tersebut TIDAK MIRIP")
+=======
+                            st.image(result['cropped_path2'], caption="Face 2", use_column_width=True)
+                    
+                    if result['is_match']:
+                        st.success("Jadi, kedua wajah tersebut MIRIP")
+>>>>>>> 8b9bb451a0134b84255bcae5b40f3e8c26ddef0d
                     else:
-                        st.warning("jadi, kedua wajah tersebut MIRIP")
+                        st.warning("jadi, kedua wajah tersebut TIDAK MIRIP")
 
 
 if __name__ == "__main__":
