@@ -127,34 +127,6 @@ def calculate_similarity(emb1, emb2):
     return cosine_similarity, euclidean_distance
 
 
-def evaluate_roc_curve(similarity_scores, labels):
-    """
-    Evaluasi threshold optimal menggunakan ROC curve
-    similarity_scores: list of similarity scores or distances
-    labels: true labels (1 if match, 0 if not match)
-    """
-    fpr, tpr, thresholds = roc_curve(labels, similarity_scores)
-    roc_auc = auc(fpr, tpr)
-
-    # Gambar ROC curve
-    plt.figure()
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve (area = %0.2f)' % roc_auc)
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic (ROC) Curve')
-    plt.legend(loc="lower right")
-
-    # Menampilkan di Streamlit
-    st.pyplot(plt)
-
-    # Mengembalikan threshold optimal
-    optimal_threshold = thresholds[np.argmax(tpr - fpr)]
-    return optimal_threshold
-
-
 def compare_faces(img1, img2, threshold=0.7):
     """
     Compare two faces and determine if they belong to the same person
@@ -214,7 +186,7 @@ def compare_faces(img1, img2, threshold=0.7):
         'similarity_score': float(similarity_score),
         'is_match': is_match,
         'distance': float(distance),
-        'decision': "Wajah adalah orang yang SAMA." if is_match else "Wajah adalah orang yang BERBEDA.",
+        'decision': "Kedua Wajah MIRIP" if is_match else "Kedua Wajah TIDAK MIRIP.",
         'cropped_path1': cropped_path1,
         'cropped_path2': cropped_path2
     }

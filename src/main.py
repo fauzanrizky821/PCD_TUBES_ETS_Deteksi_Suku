@@ -229,8 +229,6 @@ def main():
         # Create directory for cropped faces
         os.makedirs("cropped_faces", exist_ok=True)
 
-        if 'history' not in st.session_state:
-            st.session_state.history = []
         
         # Upload images
         col1, col2 = st.columns(2)
@@ -273,49 +271,10 @@ def main():
                             st.image(result['cropped_path2'], caption="Face 2", use_column_width=True)
                     
                     if result['is_match']:
-                        st.success("Jadi, kedua wajah tersebut adalah orang yang sama")
+                        st.success("Jadi, kedua wajah tersebut TIDAK MIRIP")
                     else:
-                        st.warning("jadi, kedua wajah tersebut bukan orang yang sama")
+                        st.warning("jadi, kedua wajah tersebut MIRIP")
 
-                    # Simpan ke histori
-            st.session_state.history.append(result)
-
-        # Tampilkan histori
-        if st.session_state.history:
-            st.subheader("History of Comparisons")
-            for i, item in enumerate(reversed(st.session_state.history)):
-                st.markdown(f"**Comparison #{len(st.session_state.history)-i}**")
-                cols = st.columns(2)
-                with cols[0]:
-                    st.image(item["cropped_path1"], caption="Face 1", use_column_width=True)
-                with cols[1]:
-                    st.image(item["cropped_path2"], caption="Face 2", use_column_width=True)
-                st.write(f"Similarity Score: {item['similarity_score']:.4f}")
-                st.write(f"Distance: {item['distance']:.4f}")
-                st.write(f"Decision: {item['decision']}")
-                if item['is_match']:
-                    st.success("Match!")
-                else:
-                    st.warning("Not a match!")
-                st.markdown("---")
-
-        # ROC Curve dari histori
-        if len(st.session_state.history) >= 2:
-            st.subheader("ROC Curve from History")
-            scores = [h["similarity_score"] for h in st.session_state.history]
-            labels = [1 if h["is_match"] else 0 for h in st.session_state.history]
-
-            fpr, tpr, thresholds = roc_curve(labels, scores)
-            roc_auc = auc(fpr, tpr)
-
-            fig, ax = plt.subplots()
-            ax.plot(fpr, tpr, color='blue', label=f"ROC Curve (AUC = {roc_auc:.2f})")
-            ax.plot([0, 1], [0, 1], color='red', linestyle='--')
-            ax.set_xlabel("False Positive Rate")
-            ax.set_ylabel("True Positive Rate")
-            ax.set_title("Receiver Operating Characteristic")
-            ax.legend(loc="lower right")
-            st.pyplot(fig)
 
 if __name__ == "__main__":
     main()
