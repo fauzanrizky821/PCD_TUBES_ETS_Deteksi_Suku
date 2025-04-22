@@ -35,12 +35,12 @@ PCD_TUBES_ETS_Deteksi_Suku/
 ├── src/
 │   ├── main.py                 # Aplikasi utama Streamlit
 │   ├── images/                 # Gambar untuk UI (foto anggota kelompok)
-│   └── model/
-│       ├── face_similarity.py  # Kode untuk perbandingan kesamaan wajah
-│       ├── predict_suku.py     # Kode untuk prediksi suku
-│       ├── train_model.py      # Kode untuk melatih model MobileNetV2
-│       └── preprocessing/
-│           └── preprocess.py   # Kode untuk deteksi dan pemrosesan wajah
+│   ├── model/
+│   ├   ├── face_similarity.py  # Kode untuk perbandingan kesamaan wajah
+│   ├   ├── predict_suku.py     # Kode untuk prediksi suku
+│   ├   └── train_model.py      # Kode untuk melatih model MobileNetV2
+│   └── preprocessing/
+│       └── preprocess.py   # Kode untuk deteksi dan pemrosesan wajah
 ├── .gitignore                  # File untuk mengabaikan file/folder saat git push
 ├── README.md                   # Dokumentasi proyek (file ini)
 └── requirements.txt            # Daftar dependensi
