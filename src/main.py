@@ -72,7 +72,7 @@ def main():
             {
                 "Nama": "Fauzan Rizky R.",
                 "NIM": "231511076",
-                "foto": "src/images/wildan.jpg",
+                "foto": "src/images/fauzan.jpg",
             },
             {
                 "Nama": "Muhammad Wildan G.",
@@ -82,7 +82,7 @@ def main():
             {
                 "Nama": "Restu Akbar",
                 "NIM": "231511088",
-                "foto": "src/images/wildan.jpg",
+                "foto": "src/images/restu.jpg",
             },
         ]
 
@@ -189,7 +189,7 @@ def main():
 
         # Load model MobileNetV2
         mobilenet_model = load_model(
-            "model/mobilenetv2_final_finetuned.h5", compile=True
+            "model/mobilenetv2_best.h5", compile=True
         )
         print(mobilenet_model)
 
@@ -235,7 +235,7 @@ def main():
         # Load model dan class
         class_indices = generate_class_indices("data/processed/")
         mobilenet_model = load_model(
-            "model/mobilenetv2_final_finetuned.h5", compile=True
+            "model/mobilenetv2_best.h5", compile=True
         )
 
         # UI Streamlit
@@ -337,7 +337,6 @@ def main():
                                 use_column_width=True,
                             )
                         with col2:
-<<<<<<< HEAD
                             st.image(
                                 result["cropped_path2"],
                                 caption="Face 2",
@@ -345,13 +344,7 @@ def main():
                             )
 
                     if result["is_match"]:
-                        st.success("Jadi, kedua wajah tersebut TIDAK MIRIP")
-=======
-                            st.image(result['cropped_path2'], caption="Face 2", use_column_width=True)
-                    
-                    if result['is_match']:
                         st.success("Jadi, kedua wajah tersebut MIRIP")
->>>>>>> 8b9bb451a0134b84255bcae5b40f3e8c26ddef0d
                     else:
                         st.warning("jadi, kedua wajah tersebut TIDAK MIRIP")
 
