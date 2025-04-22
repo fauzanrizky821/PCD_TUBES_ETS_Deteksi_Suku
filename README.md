@@ -21,31 +21,30 @@ Proyek ini merupakan bagian dari tugas praktikum Pengolahan Citra Digital (PCD) 
 ```
 PCD_TUBES_ETS_Deteksi_Suku/
 ├── data/
-│   ├── augmented_train/      # Gambar hasil augmentasi untuk pelatihan
-│   ├── processed/            # Gambar wajah yang sudah diproses (cropped)
-│   ├── raw/                  # Gambar wajah asli sebelum diproses
-│   └── temp/                 # Folder sementara untuk gambar dari kamera/file
+│   ├── augmented_train/        # Gambar hasil augmentasi untuk pelatihan
+│   ├── processed/              # Gambar wajah yang sudah diproses (cropped)
+│   ├── raw/                    # Gambar wajah asli sebelum diproses
+│   └── temp/                   # Folder sementara untuk gambar dari kamera/file
 ├── model/
-│   ├── accuracy_plot.png     # Grafik akurasi pelatihan
-│   ├── confusion_matrix.png  # Matriks konfusi hasil evaluasi
-│   ├── loss_plot.png         # Grafik loss pelatihan
-│   ├── mobilenetv2_best.h5   # Model terbaik setelah pelatihan
-│   ├── mobilenetv2_final.h5  # Model akhir setelah pelatihan awal
+│   ├── accuracy_plot.png       # Grafik akurasi pelatihan
+│   ├── confusion_matrix.png    # Matriks konfusi hasil evaluasi
+│   ├── loss_plot.png           # Grafik loss pelatihan
+│   ├── mobilenetv2_best.h5     # Model terbaik setelah pelatihan
+│   ├── mobilenetv2_final.h5    # Model akhir setelah pelatihan awal
 │   └── mobilenetv2_final_finetuned.h5 # Model akhir setelah fine-tuning
 ├── src/
-│   ├── images/               # Gambar untuk UI (foto anggota kelompok)
+│   ├── main.py                 # Aplikasi utama Streamlit
+│   ├── images/                 # Gambar untuk UI (foto anggota kelompok)
 │   └── model/
 │       ├── face_similarity.py  # Kode untuk perbandingan kesamaan wajah
 │       ├── predict_suku.py     # Kode untuk prediksi suku
 │       ├── train_model.py      # Kode untuk melatih model MobileNetV2
 │       └── preprocessing/
 │           ├── preprocess.py   # Kode untuk deteksi dan pemrosesan wajah
-│           ├── augment.py      # Kode untuk augmentasi data (opsional)
-│           ├── config.py       # Konfigurasi (opsional)
-│           └── main.py         # Aplikasi utama Streamlit
-├── .gitignore                # File untuk mengabaikan file/folder saat git push
-├── README.md                 # Dokumentasi proyek (file ini)
-└── requirements.txt          # Daftar dependensi
+│           └── augment.py      # Kode untuk augmentasi data (opsional)
+├── .gitignore                  # File untuk mengabaikan file/folder saat git push
+├── README.md                   # Dokumentasi proyek (file ini)
+└── requirements.txt            # Daftar dependensi
 ```
 
 ## Cara Setup
@@ -85,7 +84,7 @@ PCD_TUBES_ETS_Deteksi_Suku/
 1. **Jalankan Aplikasi Streamlit**:
 
    ```bash
-   streamlit run src/model/main.py
+   streamlit run src/main.py
    ```
 
    Aplikasi akan terbuka di browser Anda (biasanya di `http://localhost:8501`).
