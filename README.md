@@ -40,8 +40,7 @@ PCD_TUBES_ETS_Deteksi_Suku/
 │       ├── predict_suku.py     # Kode untuk prediksi suku
 │       ├── train_model.py      # Kode untuk melatih model MobileNetV2
 │       └── preprocessing/
-│           ├── preprocess.py   # Kode untuk deteksi dan pemrosesan wajah
-│           └── augment.py      # Kode untuk augmentasi data (opsional)
+│           └── preprocess.py   # Kode untuk deteksi dan pemrosesan wajah
 ├── .gitignore                  # File untuk mengabaikan file/folder saat git push
 ├── README.md                   # Dokumentasi proyek (file ini)
 └── requirements.txt            # Daftar dependensi
