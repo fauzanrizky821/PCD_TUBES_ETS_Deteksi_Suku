@@ -53,7 +53,7 @@ PCD_TUBES_ETS_Deteksi_Suku/
 1. **Clone Repository**:
 
    ```bash
-   git clone <url-repo-anda>
+   git clone https://github.com/fauzanrizky821/PCD_TUBES_ETS_Deteksi_Suku.git
    cd PCD_TUBES_ETS_Deteksi_Suku
    ```
 
